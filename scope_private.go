@@ -454,8 +454,13 @@ func (scope *Scope) related(value interface{}, foreignKeys ...string) *Scope {
 					scope.Err(query.Find(value).Error)
 				}
 			} else {
-				sql := fmt.Sprintf("%v = ?", scope.Quote(toScope.PrimaryKey()))
-				scope.Err(toScope.db.Where(sql, fromField.Field.Interface()).Find(value).Error)
+				if fromField.IsBlank == true {
+					sql := fmt.Sprintf("%v IS NULL", scope.Quote(toScope.PrimaryKey()))
+					scope.Err(toScope.db.Where(sql).Find(value).Error)
+				} else {
+					sql := fmt.Sprintf("%v = ?", scope.Quote(toScope.PrimaryKey()))
+					scope.Err(toScope.db.Where(sql, fromField.Field.Interface()).Find(value).Error)
+				}
 			}
 			return scope
 		} else if toField != nil {
