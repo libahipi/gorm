@@ -330,6 +330,7 @@ func (scope *Scope) getColumnsAsScope(column string) *Scope {
 		} else {
 			columns = reflect.New(reflect.SliceOf(reflect.PtrTo(fieldStruct.Type))).Elem()
 		}
+
 		for i := 0; i < values.Len(); i++ {
 			column := reflect.Indirect(values.Index(i)).FieldByName(column)
 			if column.Kind() == reflect.Ptr {
@@ -340,7 +341,9 @@ func (scope *Scope) getColumnsAsScope(column string) *Scope {
 					columns = reflect.Append(columns, column.Index(i).Addr())
 				}
 			} else {
-				columns = reflect.Append(columns, column.Addr())
+				if column.CanAddr() {
+					columns = reflect.Append(columns, column.Addr())
+				}
 			}
 		}
 		return scope.New(columns.Interface())
