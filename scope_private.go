@@ -19,8 +19,7 @@ func (scope *Scope) buildWhereCondition(clause map[string]interface{}) (str stri
 	case string:
 		// if string is number
 		if regexp.MustCompile("^\\s*\\d+\\s*$").MatchString(value) {
-			id, _ := strconv.Atoi(value)
-			return scope.primaryCondition(scope.AddToVars(id))
+			return scope.primaryCondition(scope.AddToVars(value))
 		} else if value != "" {
 			str = fmt.Sprintf("(%v)", value)
 		}
@@ -164,7 +163,10 @@ func (scope *Scope) whereSql() (sql string) {
 	}
 
 	if !scope.PrimaryKeyZero() {
-		primaryConditions = append(primaryConditions, scope.primaryCondition(scope.AddToVars(scope.PrimaryKeyValue())))
+		for _, field := range scope.PrimaryFields() {
+			sql := fmt.Sprintf("(%v = %v)", scope.Quote(field.DBName), scope.AddToVars(field.Field.Interface()))
+			primaryConditions = append(primaryConditions, sql)
+		}
 	}
 
 	for _, clause := range scope.Search.whereConditions {
@@ -210,11 +212,14 @@ var hasCountRegexp = regexp.MustCompile(`(?i)count(.+)`)
 
 func (scope *Scope) selectSql() string {
 	if len(scope.Search.selects) == 0 {
+		if scope.Search.joins != "" {
+			return fmt.Sprintf("%v.*", scope.QuotedTableName())
+		}
 		return "*"
 	}
 	sql := scope.buildSelectQuery(scope.Search.selects)
-	scope.Search.countingQuery = hasCountRegexp.MatchString(sql)
-	return scope.buildSelectQuery(scope.Search.selects)
+	scope.Search.countingQuery = (len(scope.Search.group) == 0) && hasCountRegexp.MatchString(sql)
+	return sql
 }
 
 func (scope *Scope) orderSql() string {
@@ -517,9 +522,18 @@ func (scope *Scope) createJoinTable(field *StructField) {
 func (scope *Scope) createTable() *Scope {
 	var tags []string
 	var primaryKeys []string
+	var primaryKeyInColumnType bool = false
 	for _, field := range scope.GetStructFields() {
 		if field.IsNormal {
 			sqlTag := scope.generateSqlTag(field)
+
+			// Check if the primary key constraint was specified as
+			// part of the column type. If so, we can only support
+			// one column as the primary key.
+			if strings.Contains(strings.ToLower(sqlTag), "primary key") {
+				primaryKeyInColumnType = true
+			}
+
 			tags = append(tags, scope.Quote(field.DBName)+" "+sqlTag)
 		}
 
@@ -530,7 +544,7 @@ func (scope *Scope) createTable() *Scope {
 	}
 
 	var primaryKeyStr string
-	if len(primaryKeys) > 0 {
+	if len(primaryKeys) > 0 && !primaryKeyInColumnType {
 		primaryKeyStr = fmt.Sprintf(", PRIMARY KEY (%v)", strings.Join(primaryKeys, ","))
 	}
 	scope.Raw(fmt.Sprintf("CREATE TABLE %v (%v %v) %s", scope.QuotedTableName(), strings.Join(tags, ","), primaryKeyStr, scope.getTableOptions())).Exec()
@@ -572,7 +586,9 @@ func (scope *Scope) addIndex(unique bool, indexName string, column ...string) {
 		sqlCreate = "CREATE UNIQUE INDEX"
 	}
 
-	scope.Raw(fmt.Sprintf("%s %v ON %v(%v);", sqlCreate, indexName, scope.QuotedTableName(), strings.Join(columns, ", "))).Exec()
+	scope.Search.Unscoped = true
+	scope.Raw(fmt.Sprintf("%s %v ON %v(%v) %v", sqlCreate, indexName, scope.QuotedTableName(), strings.Join(columns, ", "), scope.whereSql())).Exec()
+	scope.Search.Unscoped = false
 }
 
 func (scope *Scope) addForeignKey(field string, dest string, onDelete string, onUpdate string) {

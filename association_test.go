@@ -160,7 +160,7 @@ func TestManyToMany(t *testing.T) {
 
 	languageA := Language{Name: "AA"}
 	DB.Save(&languageA)
-	DB.Model(&User{Id: user.Id}).Association("Languages").Append(languageA)
+	DB.Model(&User{Id: user.Id}).Association("Languages").Append(&languageA)
 
 	languageC := Language{Name: "CC"}
 	DB.Save(&languageC)
@@ -209,6 +209,11 @@ func TestManyToMany(t *testing.T) {
 	DB.Model(&user).Association("Languages").Replace(languageB)
 	if len(user.Languages) != 1 || DB.Model(&user).Association("Languages").Count() != 1 {
 		t.Errorf("Relations should be replaced")
+	}
+
+	DB.Model(&user).Association("Languages").Replace()
+	if len(user.Languages) != 0 || DB.Model(&user).Association("Languages").Count() != 0 {
+		t.Errorf("Relations should be replaced with empty")
 	}
 
 	DB.Model(&user).Association("Languages").Replace(&[]Language{{Name: "FF"}, {Name: "JJ"}})
